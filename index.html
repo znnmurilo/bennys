@@ -759,6 +759,91 @@
             box-shadow: 0 15px 40px rgba(255, 107, 53, 0.2);
             border-color: var(--primary-color);
         }
+        
+        /* Destaque para tunagens do usuário atual */
+        .tuning-card.my-tuning {
+            border: 2px solid var(--primary-color);
+            background: linear-gradient(135deg, rgba(255, 107, 53, 0.05), rgba(255, 107, 53, 0.02));
+            position: relative;
+        }
+        
+        .tuning-card.my-tuning::before {
+            content: 'MINHA TUNAGEM';
+            position: absolute;
+            top: -10px;
+            right: 20px;
+            background: var(--primary-color);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 15px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            z-index: 10;
+        }
+        
+        .tuning-card.my-tuning:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 20px 50px rgba(255, 107, 53, 0.3);
+        }
+        
+        /* Estatísticas do histórico */
+        .history-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .stats-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            border-radius: 15px;
+            padding: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            transition: all 0.3s ease;
+        }
+        
+        .stats-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(255, 107, 53, 0.1);
+        }
+        
+        .stats-card.my-stats {
+            border-color: var(--primary-color);
+            background: linear-gradient(135deg, rgba(255, 107, 53, 0.1), rgba(255, 107, 53, 0.05));
+        }
+        
+        .stats-icon {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.3rem;
+            color: white;
+        }
+        
+        .stats-info {
+            flex: 1;
+        }
+        
+        .stats-number {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--primary-color);
+            line-height: 1;
+        }
+        
+        .stats-label {
+            font-size: 0.9rem;
+            color: var(--text-light);
+            margin-top: 0.2rem;
+        }
 
         .tuning-header {
             display: flex;
@@ -3715,23 +3800,36 @@ discord.com/developers/applications
         
         // Save to Supabase
         async function saveToSupabase(data) {
-            if (!isSupabaseConnected || !supabaseClient) return;
+            if (!isSupabaseConnected || !supabaseClient) {
+                console.log('❌ Supabase não está conectado');
+                return false;
+            }
             
             try {
+                console.log('💾 Salvando no Supabase:', data);
+                
                 const { error } = await supabaseClient
                     .from('tunings')
                     .insert([{
-                        discord_user_id: currentUser ? currentUser.id : null,
-                        mechanic_name: currentUser ? currentUser.displayName : 'Anônimo',
+                        discord_user_id: data.mechanic.discord_id,
+                        mechanic_name: data.mechanic.name,
+                        mechanic_username: data.mechanic.username || '',
+                        mechanic_avatar: data.mechanic.avatar || '',
                         client: data.client,
                         passport: data.passport,
                         tunings: data.tunings,
                         total: data.total,
-                        date: data.date
+                        date: data.date,
+                        timestamp: data.timestamp
                     }]);
                 
-                if (error) throw error;
-                console.log('✅ Dados salvos no Supabase');
+                if (error) {
+                    console.error('❌ Erro do Supabase:', error);
+                    throw error;
+                }
+                
+                console.log('✅ Dados salvos no Supabase com sucesso!');
+                return true;
             } catch (error) {
                 console.error('❌ Erro ao salvar no Supabase:', error);
                 throw error;
@@ -3748,10 +3846,10 @@ discord.com/developers/applications
                     .select('*')
                     .order('created_at', { ascending: false });
                 
-                // Filter by current user if logged in
-                if (currentUser) {
-                    query = query.eq('discord_user_id', currentUser.id);
-                }
+                // NÃO filtrar por usuário - mostrar TODAS as tunagens
+                // if (currentUser) {
+                //     query = query.eq('discord_user_id', currentUser.id);
+                // }
                 
                 const { data, error } = await query;
                 
@@ -3763,9 +3861,12 @@ discord.com/developers/applications
                     tunings: item.tunings,
                     total: item.total,
                     date: item.date,
+                    timestamp: item.timestamp,
                     mechanic: {
                         name: item.mechanic_name,
-                        discord_id: item.discord_user_id
+                        discord_id: item.discord_user_id,
+                        username: item.mechanic_username || '',
+                        avatar: item.mechanic_avatar || ''
                     }
                 }));
                 
@@ -3777,20 +3878,35 @@ discord.com/developers/applications
         
         // Storage Functions (Hybrid Local/Supabase)
         async function saveData(data) {
+            console.log('💾 === SALVANDO DADOS ===');
+            console.log('📊 Dados recebidos:', data);
+            console.log('🔗 Supabase conectado:', isSupabaseConnected);
+            console.log('🔑 Cliente Supabase:', !!supabaseClient);
+            
             // Always save to local storage as backup
             saveToLocalStorage(data);
+            console.log('✅ Local Storage: Salvo com sucesso');
             
             // If Supabase is connected, save there too
             if (isSupabaseConnected && supabaseClient) {
                 try {
-                    await saveToSupabase(data);
-                    console.log('✅ Dados salvos em Local Storage + Supabase');
+                    console.log('🚀 Tentando salvar no Supabase...');
+                    const success = await saveToSupabase(data);
+                    
+                    if (success) {
+                        console.log('✅ Supabase: Salvo com sucesso');
+                        showNotification('✅ Dados salvos em Local Storage + Supabase', 'success');
+                    } else {
+                        console.log('⚠️ Supabase: Falha no salvamento');
+                        showNotification('⚠️ Salvo localmente. Falha no Supabase.', 'warning');
+                    }
                 } catch (error) {
                     console.error('❌ Erro ao salvar no Supabase:', error);
                     showNotification('⚠️ Salvo localmente. Erro no Supabase: ' + error.message, 'warning');
                 }
             } else {
-                console.log('✅ Dados salvos apenas em Local Storage');
+                console.log('⚠️ Supabase não disponível - salvando apenas localmente');
+                showNotification('⚠️ Supabase não conectado. Salvo apenas localmente.', 'warning');
             }
         }
 
@@ -3823,6 +3939,38 @@ discord.com/developers/applications
             const dashboard = document.getElementById('historyDashboard');
             dashboard.innerHTML = '';
             
+            // Contar tunagens do usuário atual
+            const myTunings = currentUser ? history.filter(item => 
+                item.mechanic && item.mechanic.discord_id === currentUser.id
+            ).length : 0;
+            
+            // Adicionar header com estatísticas
+            const statsHeader = document.createElement('div');
+            statsHeader.className = 'history-stats';
+            statsHeader.innerHTML = `
+                <div class="stats-card">
+                    <div class="stats-icon">
+                        <i class="fas fa-tools"></i>
+                    </div>
+                    <div class="stats-info">
+                        <div class="stats-number">${history.length}</div>
+                        <div class="stats-label">Total de Tunagens</div>
+                    </div>
+                </div>
+                ${currentUser ? `
+                <div class="stats-card my-stats">
+                    <div class="stats-icon">
+                        <i class="fas fa-user-check"></i>
+                    </div>
+                    <div class="stats-info">
+                        <div class="stats-number">${myTunings}</div>
+                        <div class="stats-label">Minhas Tunagens</div>
+                    </div>
+                </div>
+                ` : ''}
+            `;
+            dashboard.appendChild(statsHeader);
+            
             if (history.length === 0) {
                 dashboard.innerHTML = `
                     <div class="empty-history">
@@ -3842,19 +3990,18 @@ discord.com/developers/applications
                 // Create mechanic avatar and info
                 let avatarUrl = '';
                 let mechanicDisplayName = mechanicName;
-                let mechanicUsername = '';
+                let mechanicUsername = mechanic.username || '';
                 
-                if (mechanicDiscordId && mechanic.user) {
-                    const user = mechanic.user;
-                    mechanicDisplayName = user.display_name || user.username || mechanicName;
-                    mechanicUsername = user.username || 'unknown';
-                    
-                    if (user.avatar) {
-                        avatarUrl = `https://cdn.discordapp.com/avatars/${mechanicDiscordId}/${user.avatar}.png?size=128`;
-                    } else {
-                        const discriminator = user.username ? user.username.slice(-4) : '0000';
-                        avatarUrl = `https://cdn.discordapp.com/embed/avatars/${parseInt(discriminator) % 5}.png`;
-                    }
+                // Check if this tuning was made by current user
+                const isCurrentUserTuning = currentUser && mechanicDiscordId === currentUser.id;
+                
+                // Use saved avatar from Supabase or generate default
+                if (mechanic.avatar) {
+                    avatarUrl = `https://cdn.discordapp.com/avatars/${mechanicDiscordId}/${mechanic.avatar}.png?size=128`;
+                } else if (mechanicDiscordId) {
+                    // Generate default avatar based on Discord ID
+                    const defaultAvatarIndex = parseInt(mechanicDiscordId.slice(-1)) % 5;
+                    avatarUrl = `https://cdn.discordapp.com/embed/avatars/${defaultAvatarIndex}.png`;
                 } else {
                     // Default avatar for anonymous
                     avatarUrl = 'https://cdn.discordapp.com/embed/avatars/0.png';
@@ -3866,7 +4013,7 @@ discord.com/developers/applications
                 ).join('');
                 
                 const card = document.createElement('div');
-                card.className = 'tuning-card';
+                card.className = `tuning-card ${isCurrentUserTuning ? 'my-tuning' : ''}`;
                 card.innerHTML = `
                     <div class="tuning-header">
                         <div class="tuning-client-info">
