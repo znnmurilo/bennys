@@ -2471,7 +2471,7 @@
         let supabaseClient = null;
         let isSupabaseConnected = false;
         let isAdminAuthenticated = false;
-        const WEBHOOK_URL = 'https://discord.com/api/webhooks/1407122223072022539/F6n0wbiEIi5pZpAj0jEL3Ttr6BoZqrDx8NdlX2-DvEuDKPej7T0M8WAvgUhYi8F2Szxz';
+        const WEBHOOK_URL = 'https://discord.com/api/webhooks/1407394342653526138/2fjTu7q5K-AJ5yrHFgMN9RSAhZbl4QwLnNLmNbbg0f1XOWHQga5PmjeerLIq2tEBSrVE';
         
         // Admin Configuration
         const ADMIN_PASSWORD = 'benny2024'; // Senha para acessar configurações
@@ -3370,24 +3370,32 @@ discord.com/developers/applications
 
         // Finalize Tuning
         async function finalizeTuning() {
+            console.log('🔧 === INICIANDO FINALIZAÇÃO DA TUNAGEM ===');
+            
             // Check if user is logged in
             if (!isUserLoggedIn()) {
+                console.log('❌ Usuário não está logado');
                 showNotification('Você precisa estar logado com Discord para realizar tunagens!', 'error');
                 return;
             }
+            console.log('✅ Usuário logado:', currentUser?.displayName);
             
             const clientName = document.getElementById('clientName').value.trim();
             const passport = document.getElementById('passport').value.trim();
             
             if (!clientName || !passport) {
+                console.log('❌ Dados faltando - Cliente:', clientName, 'Passaporte:', passport);
                 showNotification('Por favor, preencha o nome do cliente e o passaporte!', 'error');
                 return;
             }
+            console.log('✅ Dados do formulário - Cliente:', clientName, 'Passaporte:', passport);
             
             if (totalAmount === 0) {
+                console.log('❌ Nenhuma tunagem selecionada');
                 showNotification('Por favor, selecione pelo menos uma tunagem!', 'error');
                 return;
             }
+            console.log('✅ Total da tunagem: R$', totalAmount.toLocaleString('pt-BR'));
             
             // Collect selected tunings
             const selectedTunings = [];
@@ -3399,6 +3407,7 @@ discord.com/developers/applications
                     price: price
                 });
             });
+            console.log('✅ Tunagens selecionadas:', selectedTunings.length, 'itens');
             
             const tuningData = {
                 client: clientName,
@@ -3414,19 +3423,30 @@ discord.com/developers/applications
                     avatar: currentUser.avatar
                 }
             };
+            console.log('📦 Dados preparados:', tuningData);
             
             // Show loading
             showNotification('Enviando para Discord e salvando...', 'loading');
             
             try {
+                console.log('📤 === ENVIANDO PARA DISCORD ===');
                 // Send to Discord
                 await sendToDiscord(tuningData);
+                console.log('✅ Discord: Enviado com sucesso');
                 
+                console.log('💾 === SALVANDO DADOS ===');
                 // Save to storage (local + Supabase if connected)
                 await saveData(tuningData);
+                console.log('✅ Dados: Salvos com sucesso');
+                
+                // Reload history
+                console.log('🔄 === RECARREGANDO HISTÓRICO ===');
+                await loadHistory();
+                console.log('✅ Histórico: Recarregado');
                 
                 // Show success
                 showNotification('Tunagem finalizada com sucesso!', 'success');
+                console.log('🎉 === TUNAGEM FINALIZADA COM SUCESSO ===');
                 
                 // Clear form
                 setTimeout(() => {
@@ -3434,13 +3454,61 @@ discord.com/developers/applications
                 }, 2000);
                 
             } catch (error) {
-                console.error('Erro:', error);
-                showNotification('Erro ao finalizar tunagem. Verifique a conexão e tente novamente.', 'error');
+                console.error('❌ === ERRO DETALHADO ===');
+                console.error('Tipo do erro:', error.name);
+                console.error('Mensagem:', error.message);
+                console.error('Stack trace:', error.stack);
+                
+                // Identify specific error type
+                let errorMessage = 'Erro ao finalizar tunagem. ';
+                let errorType = 'desconhecido';
+                
+                if (error.message.includes('Discord') || error.message.includes('webhook')) {
+                    errorType = 'Discord';
+                    errorMessage += 'Problema ao enviar para Discord. Verifique a webhook.';
+                    
+                    // Try to save anyway
+                    try {
+                        console.log('🔄 Tentando salvar sem Discord...');
+                        await saveData(tuningData);
+                        await loadHistory();
+                        showNotification('Tunagem salva localmente. Erro no Discord: ' + error.message, 'warning');
+                        setTimeout(() => clearForm(), 2000);
+                        return;
+                    } catch (saveError) {
+                        console.error('❌ Erro ao salvar também:', saveError);
+                    }
+                    
+                } else if (error.message.includes('Supabase') || error.message.includes('database')) {
+                    errorType = 'Supabase';
+                    errorMessage += 'Problema com banco de dados. Dados salvos localmente.';
+                } else if (error.message.includes('fetch') || error.message.includes('network')) {
+                    errorType = 'Rede';
+                    errorMessage += 'Problema de conexão. Verifique sua internet.';
+                } else {
+                    errorType = 'Sistema';
+                    errorMessage += 'Erro interno: ' + error.message;
+                }
+                
+                console.error('❌ Tipo identificado:', errorType);
+                showNotification(errorMessage, 'error');
+                
+                // Always try to save locally as last resort
+                try {
+                    console.log('🔄 Salvamento local de emergência...');
+                    saveToLocalStorage(tuningData);
+                    showNotification('Dados salvos localmente como backup.', 'warning');
+                } catch (localError) {
+                    console.error('❌ FALHA CRÍTICA - Não foi possível salvar nem localmente:', localError);
+                }
             }
         }
 
         // Send to Discord
         async function sendToDiscord(data) {
+            console.log('📤 sendToDiscord: Iniciando envio para Discord');
+            console.log('📦 sendToDiscord: Dados recebidos:', data);
+            
             const embed = {
                 title: "🔧 Nova Tunagem - Benny's Original Motor Works",
                 description: `**Capital Valley RP**`,
@@ -3498,19 +3566,117 @@ discord.com/developers/applications
             }
         }
 
+        // ===== SUPABASE FUNCTIONS =====
+        
+        // Configure Supabase (função principal)
+        function setupSupabase(url, key) {
+            try {
+                console.log('🔧 Configurando Supabase...');
+                
+                // Verificar se o Supabase está carregado
+                if (typeof supabase === 'undefined') {
+                    throw new Error('Supabase não está carregado. Verifique se o script está incluído.');
+                }
+                
+                // Criar cliente Supabase
+                supabaseClient = supabase.createClient(url, key);
+                isSupabaseConnected = true;
+                
+                // Update UI indicator
+                const indicator = document.querySelector('.connection-indicator span');
+                const dot = document.querySelector('.connection-dot');
+                if (indicator) indicator.textContent = 'Supabase';
+                if (dot) dot.style.background = 'var(--accent-color)';
+                
+                console.log('✅ Supabase conectado!');
+                showNotification('✅ Supabase configurado com sucesso!', 'success');
+                
+                return true;
+            } catch (error) {
+                console.error('❌ Erro ao configurar Supabase:', error);
+                showNotification('❌ Erro ao configurar Supabase: ' + error.message, 'error');
+                return false;
+            }
+        }
+        
+        // Save to Supabase
+        async function saveToSupabase(data) {
+            if (!isSupabaseConnected || !supabaseClient) return;
+            
+            try {
+                const { error } = await supabaseClient
+                    .from('tunings')
+                    .insert([{
+                        discord_user_id: currentUser ? currentUser.id : null,
+                        mechanic_name: currentUser ? currentUser.displayName : 'Anônimo',
+                        client: data.client,
+                        passport: data.passport,
+                        tunings: data.tunings,
+                        total: data.total,
+                        date: data.date
+                    }]);
+                
+                if (error) throw error;
+                console.log('✅ Dados salvos no Supabase');
+            } catch (error) {
+                console.error('❌ Erro ao salvar no Supabase:', error);
+                throw error;
+            }
+        }
+        
+        // Load from Supabase
+        async function loadFromSupabase() {
+            if (!isSupabaseConnected || !supabaseClient) return [];
+            
+            try {
+                let query = supabaseClient
+                    .from('tunings')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+                
+                // Filter by current user if logged in
+                if (currentUser) {
+                    query = query.eq('discord_user_id', currentUser.id);
+                }
+                
+                const { data, error } = await query;
+                
+                if (error) throw error;
+                
+                return data.map(item => ({
+                    client: item.client,
+                    passport: item.passport,
+                    tunings: item.tunings,
+                    total: item.total,
+                    date: item.date,
+                    mechanic: {
+                        name: item.mechanic_name,
+                        discord_id: item.discord_user_id
+                    }
+                }));
+                
+            } catch (error) {
+                console.error('❌ Erro ao carregar do Supabase:', error);
+                return [];
+            }
+        }
+        
         // Storage Functions (Hybrid Local/Supabase)
         async function saveData(data) {
             // Always save to local storage as backup
             saveToLocalStorage(data);
             
             // If Supabase is connected, save there too
-            if (isSupabaseConnected) {
+            if (isSupabaseConnected && supabaseClient) {
                 try {
                     await saveToSupabase(data);
+                    console.log('✅ Dados salvos em Local Storage + Supabase');
                 } catch (error) {
-                    console.error('Erro ao salvar no Supabase:', error);
-                    showNotification('Salvo localmente. Erro no Supabase: ' + error.message, 'warning');
+                    console.error('❌ Erro ao salvar no Supabase:', error);
+                    showNotification('⚠️ Salvo localmente. Erro no Supabase: ' + error.message, 'warning');
                 }
+            } else {
+                console.log('✅ Dados salvos apenas em Local Storage');
             }
         }
 
@@ -3524,18 +3690,20 @@ discord.com/developers/applications
             let history = [];
             
             // Try to load from Supabase first
-            if (isSupabaseConnected) {
+            if (isSupabaseConnected && supabaseClient) {
                 try {
                     history = await loadFromSupabase();
+                    console.log('📂 Histórico carregado do Supabase:', history.length, 'itens');
                 } catch (error) {
-                    console.error('Erro ao carregar do Supabase:', error);
-                    showNotification('Erro ao carregar do Supabase. Usando dados locais.', 'warning');
+                    console.error('❌ Erro ao carregar do Supabase:', error);
+                    showNotification('⚠️ Erro ao carregar do Supabase. Usando dados locais.', 'warning');
                 }
             }
             
             // If no Supabase data or error, use local storage
             if (history.length === 0) {
                 history = JSON.parse(localStorage.getItem('tuningHistory') || '[]');
+                console.log('📂 Histórico carregado do Local Storage:', history.length, 'itens');
             }
             
             const dashboard = document.getElementById('historyDashboard');
